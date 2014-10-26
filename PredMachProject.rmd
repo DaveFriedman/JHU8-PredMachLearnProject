@@ -1,0 +1,117 @@
+---
+title: "Human Activity Recognition with Machine Learning"
+author: "Dave Friedman"
+date: "Saturday, October 25, 2014"
+output: "html_document"
+---
+
+# Introduction & Summary
+Is it possible to quantify how well an activity is performed? In their paper, *Qualitative Activity Recognition of Weight Lifting Exercises*, Velloso, Bulling, Gellersen, Ugulino, & Fuks <sup>1</sup> investigate. The researchers had 6 participants curl a 1.25kg dumbbell in 5 different fashions, each according to a specification: Class A (perfect form), Class B (throwing elbows out to front), class C (raising the dumbbell halfway), Class D (lowering the dumbbell halfway), and class E (throwing the hips to the front). Each participant performed 10 repetitions for each class of dumbbell curl.
+Velleso et. al. found that the quality of dumbbell curls could be quantified, through manual feature selection and statistical analysis.
+
+In this project, created for the [Practical Machine Learning course](https://www.coursera.org/course/predmachlearn) (offered by Johns Hopkins University, via Coursera's platform), we'll investigate whether or not their manual feature selection could be replicated naively, with Stochastic Gradient Boosting.
+
+<sup>1</sup>: Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(knitr)
+opts_chunk$set(warning=FALSE, message=FALSE)
+```
+
+## Get the Data
+```{r}
+trainURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testURL  <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+download.file(testURL, "pml-testing.csv", method="curl")
+download.file(trainURL, "pml-training.csv", method="curl")
+
+problem.set <- read.csv("pml-testing.csv")
+df <- read.csv("pml-training.csv")
+```
+
+
+## Explore the Data
+```{r}
+str(df)
+head(df[1:5], 25)
+head(df[5:10], 25)
+table(df$classe)
+```
+
+## Clean the Data
+```{r}
+library(caret)
+## Remove all rows with New Window
+df <- df[df$new_window == "no",] 
+
+## Remove all rows whose values are completely NA, or are completely empty
+df <- df[, colSums(is.na(df)) != nrow(df)]
+df <- df[, colSums(df=="") != nrow(df)]
+df <- df[-(1:7)]
+head(df[1:5], 25)
+
+## Apply relevant transformations to Problem Set
+problem.set <- problem.set[, colSums(is.na(problem.set)) != nrow(problem.set)]
+problem.set <- problem.set[, colSums(problem.set=="") != nrow(problem.set)]
+problem.set <- problem.set[-(1:7)]
+```
+
+
+## Model the Data
+```{r, cache=TRUE,}
+## Create Train & Test sets
+set.seed(212)
+in.train <- createDataPartition(y=df$classe, p=0.6, list=FALSE)
+train <- df[ in.train,]
+test  <- df[-in.train,]
+dim(train)
+dim(test)
+
+fit <- train(classe~., data=train, method="gbm", verbose=FALSE)
+fit
+```
+
+## Confirm the Model's Accuracy
+```{r}
+## In-Sample Accuracy
+predicted.train <- predict(fit, train)
+confusionMatrix(predicted.train, train$classe)
+
+## Out-of-Sample Accuracy
+predicted.test <- predict(fit, test)
+confusionMatrix(predicted.test, test$classe)
+```
+
+## Predicting the Problem Set with the Model
+```{r}
+## Predict Classe based on Problem Set data & fitted model
+answers <- predict(fit, problem.set)
+answers <- as.character(answers)
+answers
+```
+
+## Write to Files
+```{r}
+pml_write_files = function(x){
+    n = length(x)
+    for(i in 1:n){
+        filename = paste0("problem_id_",i,".txt")
+        write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+    }
+}
+setwd("Answers")
+pml_write_files(answers)
+setwd("../")
+```
+
+## Conclusion
+We find that Stochastic Gradient Boosting, without manual feature selection, can in fact produce  predictions with great accuracy.
+
+Our Confusion Matrix on the Training Data shows a high in-sample accuracy of .977, and our Confusion Matrix on the Test set shows strong generalizability and only marginal overfitting, with an out-of-sample accuracy of .963. This is the Positive Predictive Value of each Class, averaged. More practically, this algorithm correctly predicted the 20 questions in the Problem Set.
+
+We also find that there is steep drop-off in the Relative Influence of the features in the dataset. As shown by the chart below, influence decreases by half from the first to second most influential features, and continues to fall off rapidly.
+```{r}
+## Top 5 Influencers
+head(summary(fit),5)
+```
